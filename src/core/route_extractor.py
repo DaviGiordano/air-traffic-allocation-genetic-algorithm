@@ -17,7 +17,7 @@ class RouteExtractor:
     def extract_od_pairs(
         route: AircraftRoute,
         route_durations: Dict[Tuple[str, str], int]
-    ) -> List[Tuple[str, str, int, int, int]]:
+    ) -> List[Tuple[str, str, int, int, int, int, int]]:
         """
         Extract all possible origin-destination routes from an aircraft route.
 
@@ -26,7 +26,7 @@ class RouteExtractor:
             route_durations: Dictionary mapping (origin, dest) to duration.
 
         Returns:
-            List of (origin, dest, stops, total_time, departure_time) tuples.
+            List of (origin, dest, stops, total_time, departure_time, start_idx, end_idx) tuples.
         """
         if route.get_length() < 2:
             return []
@@ -82,7 +82,9 @@ class RouteExtractor:
                         current_time += COOLDOWN_TIME
 
                 if valid:
-                    routes.append((origin, dest, stops, total_time, departure_time))
+                    routes.append(
+                        (origin, dest, stops, total_time, departure_time, i, j)
+                    )
 
         return routes
 
@@ -91,19 +93,21 @@ class RouteExtractor:
     def build_route_map(
         chromosome: Chromosome,
         problem_data: ProblemData,
-        aircraft_capacity: Dict[int, int]
-    ) -> Dict[Tuple[str, str], List[Tuple[int, int, int, int]]]:
+        leg_capacities: Dict[int, List[int]],
+        route_airports: Dict[int, List[str]]
+    ) -> Dict[Tuple[str, str], List[Tuple[int, int, int, int, int, int]]]:
         """
         Build route availability map for all origin-destination pairs.
 
         Args:
             chromosome: Chromosome to extract routes from.
             problem_data: ProblemData containing route durations.
-            aircraft_capacity: Dictionary mapping aircraft_id to remaining capacity.
+            leg_capacities: Dictionary mapping aircraft_id to list of remaining capacity per leg.
+            route_airports: Dictionary to populate with aircraft_id -> list of airports for later updates.
 
         Returns:
             Dictionary mapping (origin, dest) to list of
-            (aircraft_id, stops, total_time, capacity_remaining).
+            (aircraft_id, stops, total_time, capacity_remaining, start_idx, end_idx).
             Routes are sorted by (stops, total_time).
         """
         route_map = {}
@@ -117,54 +121,77 @@ class RouteExtractor:
                     route_durations[(origin, dest)] = duration
 
         for aircraft_id, route in enumerate(chromosome.get_routes()):
-            if aircraft_capacity.get(aircraft_id, 0) <= 0:
+            airports = route.get_airports()
+            route_airports[aircraft_id] = airports
+            if len(airports) < 2:
                 continue
 
             extracted_routes = RouteExtractor.extract_od_pairs(route, route_durations)
 
-            for origin, dest, stops, total_time, _ in extracted_routes:
+            for origin, dest, stops, total_time, _, start_idx, end_idx in extracted_routes:
                 key = (origin, dest)
-                capacity = aircraft_capacity.get(aircraft_id, 0)
+                capacity = RouteExtractor._segment_capacity(
+                    leg_capacities, aircraft_id, start_idx, end_idx
+                )
+
+                if capacity <= 0:
+                    continue
 
                 if key not in route_map:
                     route_map[key] = []
 
-                route_map[key].append((aircraft_id, stops, total_time, capacity))
+                route_map[key].append(
+                    (aircraft_id, stops, total_time, capacity, start_idx, end_idx)
+                )
 
         # Sort routes by (stops, total_time) for each origin-destination pair
         for key in route_map:
-            route_map[key].sort(key=lambda x: (x[1], x[2]))
+            route_map[key].sort(key=lambda x: (x[1], x[2], x[-1]))
 
         return route_map
 
     @staticmethod
     @timing_decorator
     def update_capacity_in_map(
-        route_map: Dict[Tuple[str, str], List[Tuple[int, int, int, int]]],
+        route_map: Dict[Tuple[str, str], List[Tuple[int, int, int, int, int, int]]],
         aircraft_id: int,
-        new_capacity: int
+        leg_capacities: Dict[int, List[int]]
     ) -> None:
         """
-        Update capacity for all routes involving a specific aircraft.
+        Update capacities for all routes involving a specific aircraft using per-leg capacities.
 
         Args:
             route_map: Dictionary of available routes.
             aircraft_id: ID of aircraft to update.
-            new_capacity: New capacity value.
+            leg_capacities: Dictionary of remaining capacity per leg for each aircraft.
         """
+        keys_to_delete = []
         for key in route_map:
             updated_routes = []
             for route in route_map[key]:
-                if route[0] == aircraft_id:
-                    updated_routes.append((route[0], route[1], route[2], new_capacity))
+                aid, stops, total_time, _, start_idx, end_idx = route
+                if aid == aircraft_id:
+                    capacity = RouteExtractor._segment_capacity(
+                        leg_capacities, aircraft_id, start_idx, end_idx
+                    )
+                    if capacity > 0:
+                        updated_routes.append(
+                            (aid, stops, total_time, capacity, start_idx, end_idx)
+                        )
                 else:
                     updated_routes.append(route)
-            route_map[key] = updated_routes
-            route_map[key].sort(key=lambda x: (x[1], x[2]))
+            if updated_routes:
+                updated_routes.sort(key=lambda x: (x[1], x[2]))
+                route_map[key] = updated_routes
+            else:
+                keys_to_delete.append(key)
+
+        for key in keys_to_delete:
+            route_map.pop(key, None)
 
     @staticmethod
     def remove_aircraft_from_map(
-        route_map: Dict[Tuple[str, str], List[Tuple[int, int, int, int]]],
+        route_map: Dict[Tuple[str, str], List[Tuple[int, int, int, int, int, int]]],
         aircraft_id: int
     ) -> None:
         """
@@ -180,3 +207,41 @@ class RouteExtractor:
                 if route[0] != aircraft_id
             ]
 
+    @staticmethod
+    def initialize_leg_capacities(chromosome: Chromosome, default_capacity: int) -> Dict[int, List[int]]:
+        """
+        Initialize per-leg capacities for each aircraft.
+
+        Args:
+            chromosome: Chromosome with routes.
+            default_capacity: Initial capacity per leg.
+
+        Returns:
+            Dictionary mapping aircraft_id to list of capacities per leg.
+        """
+        leg_capacities: Dict[int, List[int]] = {}
+        for aircraft_id, route in enumerate(chromosome.get_routes()):
+            leg_count = max(route.get_length() - 1, 0)
+            leg_capacities[aircraft_id] = [default_capacity for _ in range(leg_count)]
+        return leg_capacities
+
+    @staticmethod
+    def _segment_capacity(
+        leg_capacities: Dict[int, List[int]], aircraft_id: int, start_idx: int, end_idx: int
+    ) -> int:
+        """
+        Compute available capacity for a segment between start and end indices.
+
+        Args:
+            leg_capacities: Remaining capacities per leg.
+            aircraft_id: Aircraft identifier.
+            start_idx: Start airport index in route.
+            end_idx: End airport index (exclusive of last airport index).
+
+        Returns:
+            Minimum capacity across all legs in the segment.
+        """
+        legs = leg_capacities.get(aircraft_id, [])
+        if start_idx >= end_idx or start_idx < 0 or end_idx > len(legs):
+            return 0
+        return min(legs[start_idx:end_idx])

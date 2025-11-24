@@ -25,7 +25,7 @@ class PassengerAllocator:
     def allocate_passengers(
         self,
         chromosome: Chromosome
-    ) -> Tuple[Dict[int, int], List[Tuple[str, str, int, int, int]], List[Tuple[str, str, int]]]:
+    ) -> Tuple[Dict[int, List[int]], List[Tuple[str, str, int, int, int]], List[Tuple[str, str, int]]]:
         """
         Allocate passengers to flights.
 
@@ -33,14 +33,17 @@ class PassengerAllocator:
             chromosome: Chromosome to allocate passengers for.
 
         Returns:
-            Tuple of (aircraft_capacity, allocations, unmet_demands)
-            - aircraft_capacity: Dict mapping aircraft_id to remaining capacity
+            Tuple of (leg_capacities, allocations, unmet_demands)
+            - leg_capacities: Dict mapping aircraft_id to list of remaining capacity per leg
             - allocations: List of (origin, dest, passengers, aircraft_id, stops)
             - unmet_demands: List of (origin, dest, passengers) for unserved demand
         """
-        # Initialize aircraft capacities
+        # Initialize per-leg capacities
         num_aircraft = chromosome.get_num_aircraft()
-        aircraft_capacity = {i: AIRCRAFT_CAPACITY for i in range(num_aircraft)}
+        leg_capacities = RouteExtractor.initialize_leg_capacities(
+            chromosome, AIRCRAFT_CAPACITY
+        )
+        route_airports: Dict[int, List[str]] = {}
 
         # Shuffle demand list
         demand_list = self.problem_data.get_demand_list()
@@ -51,9 +54,9 @@ class PassengerAllocator:
         allocations = []
         unmet_demands = []
 
-        # Compute available routes ONCE at the start
+        # Compute available routes ONCE at the start (capacities updated as we allocate)
         route_map = RouteExtractor.build_route_map(
-            chromosome, self.problem_data, aircraft_capacity
+            chromosome, self.problem_data, leg_capacities, route_airports
         )
 
         # Process demand
@@ -82,16 +85,16 @@ class PassengerAllocator:
 
             # Get best route (first in sorted list)
             best_route = route_map[od_key][0]
-            aircraft_id, stops, total_time, capacity_remaining = best_route
+            aircraft_id, stops, total_time, capacity_remaining, start_idx, end_idx = best_route
 
-            # Check current capacity
-            current_capacity = aircraft_capacity.get(aircraft_id, 0)
+            # Check current capacity for the specific segment
+            segment_capacity = RouteExtractor._segment_capacity(
+                leg_capacities, aircraft_id, start_idx, end_idx
+            )
 
-            if current_capacity > 0:
+            if segment_capacity > 0:
                 # Allocate passengers (can be partial allocation)
-                passengers_to_allocate = min(passengers, current_capacity)
-                aircraft_capacity[aircraft_id] -= passengers_to_allocate
-                new_capacity = aircraft_capacity[aircraft_id]
+                passengers_to_allocate = min(passengers, segment_capacity)
 
                 allocations.append(
                     (origin, dest, passengers_to_allocate, aircraft_id, stops)
@@ -100,13 +103,17 @@ class PassengerAllocator:
                 # Reset attempt counter since we made progress
                 od_attempts[od_key] = 0
 
-                # Update route map with new capacity
-                if new_capacity <= 0:
-                    RouteExtractor.remove_aircraft_from_map(route_map, aircraft_id)
-                else:
-                    RouteExtractor.update_capacity_in_map(
-                        route_map, aircraft_id, new_capacity
-                    )
+                # Update per-leg capacities for the flown segment
+                for leg_idx in range(start_idx, end_idx):
+                    if leg_idx < len(leg_capacities.get(aircraft_id, [])):
+                        leg_capacities[aircraft_id][leg_idx] = max(
+                            0, leg_capacities[aircraft_id][leg_idx] - passengers_to_allocate
+                        )
+
+                # Update route map with new per-segment capacities
+                RouteExtractor.update_capacity_in_map(
+                    route_map, aircraft_id, leg_capacities
+                )
 
                 # If demand was only partially satisfied, put remainder back in queue
                 remaining_passengers = passengers - passengers_to_allocate
@@ -116,14 +123,14 @@ class PassengerAllocator:
                 # No capacity available, put back at front of queue
                 demand_queue.insert(0, (origin, dest, passengers))
 
-        return aircraft_capacity, allocations, unmet_demands
+        return leg_capacities, allocations, unmet_demands
 
     @staticmethod
     def find_best_route(
         origin: str,
         dest: str,
-        route_map: Dict[Tuple[str, str], List[Tuple[int, int, int, int]]]
-    ) -> Optional[Tuple[int, int, int, int]]:
+        route_map: Dict[Tuple[str, str], List[Tuple[int, int, int, int, int, int]]]
+    ) -> Optional[Tuple[int, int, int, int, int, int]]:
         """
         Find best route for an origin-destination pair.
 
@@ -133,10 +140,9 @@ class PassengerAllocator:
             route_map: Dictionary of available routes.
 
         Returns:
-            Best route tuple (aircraft_id, stops, total_time, capacity) or None.
+            Best route tuple (aircraft_id, stops, total_time, capacity, start_idx, end_idx) or None.
         """
         od_key = (origin, dest)
         if od_key not in route_map or not route_map[od_key]:
             return None
         return route_map[od_key][0]
-

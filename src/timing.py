@@ -35,7 +35,8 @@ def timing_decorator(func):
         
         # Print if execution time is significant (> 0.1 seconds)
         if elapsed > 0.1:
-            print(f"[TIMING] {func_name}: {elapsed:.4f}s")
+            pass
+            #print(f"[TIMING] {func_name}: {elapsed:.4f}s")
         
         return result
     return wrapper

@@ -35,7 +35,7 @@ class FitnessEvaluator:
             total_flights, allocations, unmet_demands, fitness_score.
         """
         # Allocate passengers
-        aircraft_capacity, allocations, unmet_demands = self.allocator.allocate_passengers(
+        _, allocations, unmet_demands = self.allocator.allocate_passengers(
             chromosome
         )
 
@@ -125,4 +125,3 @@ class FitnessEvaluator:
                 pass
 
         return len(used_flights)
-
