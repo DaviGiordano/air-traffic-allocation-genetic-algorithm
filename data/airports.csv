@@ -1,0 +1,15 @@
+code,city,state,airport_name,iata,icao,lat,lon
+MA,Manaus,AM,Manaus–Eduardo Gomes International Airport,MAO,SBEG,-3.03865,-60.04945
+BE,Belém,PA,Belém/Val-de-Cans–Júlio Cezar Ribeiro International Airport,BEL,SBBE,-1.37925,-48.47629
+FO,Fortaleza,CE,Fortaleza–Pinto Martins International Airport,FOR,SBFZ,-3.77648,-38.53198
+NA,Natal,RN,Rio Grande do Norte/São Gonçalo do Amarante–Governador Aluízio Alves International Airport,NAT,SBSG,-5.75929,-35.36837
+RE,Recife,PE,Recife/Guararapes–Gilberto Freyre International Airport,REC,SBRF,-8.12649,-34.92360
+SA,Salvador,BA,Salvador–Deputado Luís Eduardo Magalhães International Airport,SSA,SBSV,-12.90862,-38.32288
+BR,Brasília,DF,Brasília–Presidente Juscelino Kubitschek International Airport,BSB,SBBR,-15.86998,-47.91931
+BH,Belo Horizonte,MG,Belo Horizonte/Confins–Tancredo Neves International Airport,CNF,SBCF,-19.63366,-43.96799
+CI,Cuiabá,MT,Várzea Grande–Marechal Rondon International Airport,CGB,SBCY,-15.65170,-56.11670
+RJ,Rio de Janeiro,RJ,Rio de Janeiro/Galeão–Antonio Carlos Jobim International Airport,GIG,SBGL,-22.80530,-43.23950
+SP,São Paulo,SP,São Paulo/Guarulhos–Governador André Franco Montoro International Airport,GRU,SBGR,-23.43556,-46.47306
+CR,Curitiba,PR,Curitiba–Afonso Pena International Airport,CWB,SBCT,-25.52861,-49.17583
+FL,Florianópolis,SC,Florianópolis–Hercílio Luz International Airport,FLN,SBFL,-27.67028,-48.55250
+PA,Porto Alegre,RS,Porto Alegre–Salgado Filho International Airport,POA,SBPA,-29.99440,-51.17140
