@@ -39,6 +39,10 @@ class RouteScheduler:
             departure_time = current_time
             arrival_time = current_time + duration
 
+            # Stop if this leg would arrive after END_TIME
+            if arrival_time > END_TIME:
+                break
+
             schedule.append((departure_time, dest, arrival_time))
 
             # Add cooldown if not the last flight
@@ -135,4 +139,3 @@ class RouteScheduler:
                 current_time = arrival_time
 
         return current_time - START_TIME
-

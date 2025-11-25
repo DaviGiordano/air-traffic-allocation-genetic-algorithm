@@ -31,15 +31,19 @@ class RouteExtractor:
         if route.get_length() < 2:
             return []
 
-        airports = route.get_airports()
+        airports_full = route.get_airports()
         schedule = RouteScheduler.compute_schedule(route, route_durations)
 
         if not schedule:
             return []
 
+        # Only consider the portion of the route that fits in the time window
+        max_leg_idx = len(schedule)  # number of legs scheduled
+        airports = airports_full[: max_leg_idx + 1]
+
         routes = []
 
-        # Extract direct and multi-stop routes
+        # Extract direct and multi-stop routes within the scheduled window
         for i in range(len(airports)):
             for j in range(i + 1, len(airports)):
                 origin = airports[i]
