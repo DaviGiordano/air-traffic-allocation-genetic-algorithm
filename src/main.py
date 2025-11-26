@@ -1,11 +1,12 @@
 """Main entry point for the genetic algorithm."""
 
+import pandas as pd
+
+from src.core.genetic_algorithm import GeneticAlgorithm
 from src.data_loader import load_all_data
 from src.models.problem_data import ProblemData
-from src.core.genetic_algorithm import GeneticAlgorithm
 from src.visualization import visualize_results
 
-import pandas as pd
 
 def main():
     """Main entry point."""
@@ -31,7 +32,6 @@ def main():
         # Convert chromosome to list format for visualization
         chromosome_list = [route.get_airports() for route in best_chromosome.get_routes()]
         visualize_results(chromosome_list, stats, airport_codes, save_dir="results")
-
 
     pd.to_pickle(stats, "results/stats.pkl")
     pd.to_pickle(best_chromosome, "results/best_chromosome.pkl")

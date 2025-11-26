@@ -19,9 +19,7 @@ def plot_statistics(stats: Dict, save_path: str = None):
         save_path: Optional path to save the figure
     """
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    fig.suptitle(
-        "Genetic Algorithm Results - Statistics", fontsize=16, fontweight="bold"
-    )
+    fig.suptitle("Genetic Algorithm Results - Statistics", fontsize=16, fontweight="bold")
 
     # 1. Allocation breakdown
     allocations = stats.get("allocations", [])
@@ -86,9 +84,7 @@ def plot_statistics(stats: Dict, save_path: str = None):
     metric_names = list(metrics.keys())
     metric_values = list(metrics.values())
 
-    bars = axes[1, 0].bar(
-        metric_names, metric_values, color=["red", "orange", "blue", "green"]
-    )
+    bars = axes[1, 0].bar(metric_names, metric_values, color=["red", "orange", "blue", "green"])
     axes[1, 0].set_ylabel("Value")
     axes[1, 0].set_title("Key Metrics")
     axes[1, 0].tick_params(axis="x", rotation=45)
@@ -120,9 +116,7 @@ def plot_statistics(stats: Dict, save_path: str = None):
             ]
             colors = ["#2ecc71", "#e74c3c"]
 
-            axes[1, 1].pie(
-                sizes, labels=labels, colors=colors, autopct="", startangle=90
-            )
+            axes[1, 1].pie(sizes, labels=labels, colors=colors, autopct="", startangle=90)
             axes[1, 1].set_title("Passenger Service Rate")
         else:
             axes[1, 1].text(
@@ -212,9 +206,7 @@ def plot_routes(
             linewidth = 1 + 3 * (usage / max_usage) if max_usage > 0 else 1
             alpha = 0.3 + 0.5 * (usage / max_usage) if max_usage > 0 else 0.3
 
-            ax.plot(
-                [x1, x2], [y1, y2], "b-", alpha=alpha, linewidth=linewidth, zorder=1
-            )
+            ax.plot([x1, x2], [y1, y2], "b-", alpha=alpha, linewidth=linewidth, zorder=1)
 
     # Draw all aircraft routes (lighter, in background)
     route_count = 0
@@ -228,9 +220,7 @@ def plot_routes(
                 if origin in positions and dest in positions:
                     x1, y1 = positions[origin]
                     x2, y2 = positions[dest]
-                    ax.plot(
-                        [x1, x2], [y1, y2], "gray", alpha=0.1, linewidth=0.5, zorder=0
-                    )
+                    ax.plot([x1, x2], [y1, y2], "gray", alpha=0.1, linewidth=0.5, zorder=0)
         route_count += 1
 
     # Draw airports
@@ -251,17 +241,13 @@ def plot_routes(
     ax.set_ylim(-1.3, 1.3)
     ax.set_aspect("equal")
     ax.axis("off")
-    ax.set_title(
-        f"Route Network (showing top {min(len(route_usage), max_routes)} used routes)"
-    )
+    ax.set_title(f"Route Network (showing top {min(len(route_usage), max_routes)} used routes)")
 
     # Add legend
     if route_usage:
         max_usage = max(usage for _, usage in route_usage.items())
         legend_elements = [
-            mpatches.Patch(
-                color="blue", alpha=0.8, label=f"High usage ({max_usage:.0f} pax)"
-            ),
+            mpatches.Patch(color="blue", alpha=0.8, label=f"High usage ({max_usage:.0f} pax)"),
             mpatches.Patch(color="blue", alpha=0.4, label="Low usage"),
             mpatches.Patch(color="gray", alpha=0.1, label="Unused routes"),
         ]
@@ -301,8 +287,7 @@ def plot_aircraft_routes(
 
     # Sort by total passengers allocated
     aircraft_totals = {
-        aid: sum(pax for _, _, pax, _ in allocs)
-        for aid, allocs in aircraft_allocations.items()
+        aid: sum(pax for _, _, pax, _ in allocs) for aid, allocs in aircraft_allocations.items()
     }
     sorted_aircraft = sorted(aircraft_totals.items(), key=lambda x: x[1], reverse=True)
 
@@ -311,9 +296,7 @@ def plot_aircraft_routes(
         print("No aircraft with allocations to display")
         return
 
-    fig, axes = plt.subplots(
-        (n_aircraft + 2) // 3, 3, figsize=(15, 5 * ((n_aircraft + 2) // 3))
-    )
+    fig, axes = plt.subplots((n_aircraft + 2) // 3, 3, figsize=(15, 5 * ((n_aircraft + 2) // 3)))
     fig.suptitle("Top Aircraft Routes with Allocations", fontsize=16, fontweight="bold")
 
     if n_aircraft == 1:

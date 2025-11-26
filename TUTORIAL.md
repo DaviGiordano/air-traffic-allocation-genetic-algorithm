@@ -531,7 +531,7 @@ STOP_PENALTY = 2               # Weight for stops
 SELECTION_RATIO = 0.5          # Fraction selected as parents
 CROSSOVER_RATIO = 0.5          # Fraction swapped in crossover
 ELITISM_SIZE = 1               # Number of best preserved
-NUM_WORKERS = 8                # Parallel workers (set >1 for multiprocessing)
+NUM_WORKERS = -1               # Parallel workers
 ```
 
 ---
