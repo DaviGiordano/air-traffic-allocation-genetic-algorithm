@@ -8,7 +8,7 @@ MAX_ITERATIONS = 100  # Maximum generations
 INITIAL_MUTATION_RATE = (
     0.3  # Starting mutation probability (increased to explore more solutions)
 )
-AIRCRAFT_CAPACITY = 180  # Passengers per aircraft (typical for medium aircraft)
+AIRCRAFT_CAPACITY = 200  # Passengers per aircraft (typical for medium aircraft)
 
 # Time constraints (all in minutes from midnight)
 COOLDOWN_TIME = 60  # Cooldown after each flight
@@ -27,7 +27,9 @@ FLIGHT_PENALTY = 0.0  # Weight for total flights (set to 0 to not penalize fligh
 SELECTION_RATIO = 0.5  # Select best 50%
 CROSSOVER_RATIO = 0.5  # Swap 50% of aircraft in crossover
 ELITISM_SIZE = 1  # Number of best individuals to preserve
-NUM_WORKERS = 8  # Parallel workers for fitness evaluation (set >1 to use multiprocessing)
+NUM_WORKERS = (
+    8  # Parallel workers for fitness evaluation (set >1 to use multiprocessing)
+)
 
 # Convergence
 CONVERGENCE_THRESHOLD = 50.0  # Minimum improvement to continue (in fitness units)
