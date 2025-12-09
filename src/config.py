@@ -27,4 +27,4 @@ NUM_WORKERS = -1  # Parallel workers for fitness evaluation
 
 # Convergence
 CONVERGENCE_THRESHOLD = 50.0  # Minimum improvement to continue (in fitness units)
-CONVERGENCE_WINDOW = 200  # Check convergence over last N iterations
+CONVERGENCE_WINDOW = 20  # Check convergence over last N iterations

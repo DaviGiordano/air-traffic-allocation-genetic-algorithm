@@ -58,8 +58,9 @@ class GeneticAlgorithm:
         self.population: List[Chromosome] = []
         self.best_chromosome: Optional[Chromosome] = None
         self.best_stats: Optional[Dict] = None
+        self.evolution_history: List[Dict] = []
 
-    def run(self, verbose: bool = True) -> Tuple[Chromosome, Dict]:
+    def run(self, verbose: bool = True) -> Tuple[Chromosome, Dict, List[Dict]]:
         """
         Run the genetic algorithm.
 
@@ -67,10 +68,13 @@ class GeneticAlgorithm:
             verbose: Whether to print progress.
 
         Returns:
-            Tuple of (best_chromosome, statistics_dict).
+            Tuple of (best_chromosome, statistics_dict, evolution_history).
         """
         # Reset timing statistics
         reset_timing_stats()
+
+        # Initialize evolution history
+        self.evolution_history = []
 
         # Initialize population
         self._initialize_population()
@@ -87,6 +91,36 @@ class GeneticAlgorithm:
 
         if best_fitness is not None:
             fitness_history.append(best_fitness)
+
+            # Record initial generation (generation -1 for initial population)
+            avg_fitness = np.mean(
+                [c.get_fitness() or float("inf") for c in self.population]
+            )
+            std_fitness = np.std(
+                [c.get_fitness() or float("inf") for c in self.population]
+            )
+            self.evolution_history.append(
+                {
+                    "generation": -1,
+                    "best_fitness": best_fitness,
+                    "avg_fitness": avg_fitness,
+                    "std_fitness": std_fitness,
+                    "mutation_rate": INITIAL_MUTATION_RATE,
+                    "unserved_passengers": (
+                        self.best_stats.get("unserved_passengers", 0)
+                        if self.best_stats
+                        else 0
+                    ),
+                    "total_stops": (
+                        self.best_stats.get("total_stops", 0) if self.best_stats else 0
+                    ),
+                    "total_flights": (
+                        self.best_stats.get("total_flights", 0)
+                        if self.best_stats
+                        else 0
+                    ),
+                }
+            )
 
         # Evolution loop
         for generation in range(MAX_ITERATIONS):
@@ -106,6 +140,40 @@ class GeneticAlgorithm:
                 current_fitness = self.best_chromosome.get_fitness()
                 fitness_history.append(current_fitness)
 
+                # Calculate population statistics
+                avg_fitness = np.mean(
+                    [c.get_fitness() or float("inf") for c in self.population]
+                )
+                std_fitness = np.std(
+                    [c.get_fitness() or float("inf") for c in self.population]
+                )
+
+                # Record generation metrics
+                self.evolution_history.append(
+                    {
+                        "generation": generation,
+                        "best_fitness": current_fitness,
+                        "avg_fitness": avg_fitness,
+                        "std_fitness": std_fitness,
+                        "mutation_rate": mutation_rate,
+                        "unserved_passengers": (
+                            self.best_stats.get("unserved_passengers", 0)
+                            if self.best_stats
+                            else 0
+                        ),
+                        "total_stops": (
+                            self.best_stats.get("total_stops", 0)
+                            if self.best_stats
+                            else 0
+                        ),
+                        "total_flights": (
+                            self.best_stats.get("total_flights", 0)
+                            if self.best_stats
+                            else 0
+                        ),
+                    }
+                )
+
                 # Check convergence
                 if self._check_convergence(fitness_history):
                     if verbose:
@@ -114,11 +182,11 @@ class GeneticAlgorithm:
 
                 # Print progress
                 if verbose and (generation % 50 == 0 or generation < 100):
-                    avg_fitness = np.mean(
-                        [c.get_fitness() or float("inf") for c in self.population]
+                    upax = (
+                        self.best_stats["unserved_passengers"]
+                        if self.best_stats
+                        else "N/A"
                     )
-                    std_fitness = np.std([c.get_fitness() or float("inf") for c in self.population])
-                    upax = self.best_stats["unserved_passengers"] if self.best_stats else "N/A"
                     stops = self.best_stats["total_stops"] if self.best_stats else "N/A"
                     print(
                         (
@@ -141,7 +209,7 @@ class GeneticAlgorithm:
         # Print timing summary
         print_timing_summary()
 
-        return self.best_chromosome, self.best_stats
+        return self.best_chromosome, self.best_stats, self.evolution_history
 
     def _initialize_population(self) -> None:
         """Initialize the population with random chromosomes."""
@@ -152,7 +220,9 @@ class GeneticAlgorithm:
 
     def _evaluate_population(self, verbose: bool = False) -> None:
         """Evaluate fitness for all chromosomes in population."""
-        self._evaluate_chromosomes(self.population, verbose, "Evaluating init population")
+        self._evaluate_chromosomes(
+            self.population, verbose, "Evaluating init population"
+        )
 
     def _select_parents(self) -> List[Chromosome]:
         """
@@ -164,14 +234,18 @@ class GeneticAlgorithm:
         # Sort by fitness (lower is better)
         sorted_pop = sorted(
             self.population,
-            key=lambda c: c.get_fitness() if c.get_fitness() is not None else float("inf"),
+            key=lambda c: (
+                c.get_fitness() if c.get_fitness() is not None else float("inf")
+            ),
         )
 
         # Select best individuals
         num_select = int(NUM_CHROMOSOMES * SELECTION_RATIO)
         return sorted_pop[:num_select]
 
-    def _evolve_generation(self, mutation_rate: float, generation_idx: int, verbose: bool) -> None:
+    def _evolve_generation(
+        self, mutation_rate: float, generation_idx: int, verbose: bool
+    ) -> None:
         """
         Evolve one generation.
 
@@ -211,12 +285,16 @@ class GeneticAlgorithm:
             offspring.append(parent.copy())
 
         # Evaluate offspring
-        self._evaluate_chromosomes(offspring, verbose, f"Generation {generation_idx} evaluation")
+        self._evaluate_chromosomes(
+            offspring, verbose, f"Generation {generation_idx} evaluation"
+        )
 
         # Elitism: keep best individuals
         sorted_pop = sorted(
             self.population,
-            key=lambda c: c.get_fitness() if c.get_fitness() is not None else float("inf"),
+            key=lambda c: (
+                c.get_fitness() if c.get_fitness() is not None else float("inf")
+            ),
         )
 
         # Replace worst offspring with best from previous generation
@@ -253,7 +331,9 @@ class GeneticAlgorithm:
         def _run_pool(processes):
             """Evaluate a population using multiprocessing workers (-1 uses all available cores)."""
             with Pool(
-                processes=processes, initializer=_init_pool, initargs=(self.problem_data,)
+                processes=processes,
+                initializer=_init_pool,
+                initargs=(self.problem_data,),
             ) as pool:
                 return list(
                     tqdm(
@@ -281,7 +361,9 @@ class GeneticAlgorithm:
         """Update the best solution found so far."""
         best = min(
             self.population,
-            key=lambda c: c.get_fitness() if c.get_fitness() is not None else float("inf"),
+            key=lambda c: (
+                c.get_fitness() if c.get_fitness() is not None else float("inf")
+            ),
         )
 
         if best.get_fitness() is not None:
