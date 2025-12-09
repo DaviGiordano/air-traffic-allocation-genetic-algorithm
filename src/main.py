@@ -1,8 +1,10 @@
 """Main entry point for the genetic algorithm."""
 
+import pandas as pd
+
+from src.core.genetic_algorithm import GeneticAlgorithm
 from src.data_loader import load_all_data
 from src.models.problem_data import ProblemData
-from src.core.genetic_algorithm import GeneticAlgorithm
 from src.visualization import visualize_results
 
 
@@ -20,7 +22,7 @@ def main():
 
     print("\nRunning genetic algorithm...")
     ga = GeneticAlgorithm(problem_data)
-    best_chromosome, stats = ga.run(verbose=True)
+    best_chromosome, stats, evolution_history = ga.run(verbose=True)
 
     print("\nAlgorithm completed!")
 
@@ -28,9 +30,21 @@ def main():
     if best_chromosome and stats:
         print("\nGenerating visualizations...")
         # Convert chromosome to list format for visualization
-        chromosome_list = [route.get_airports() for route in best_chromosome.get_routes()]
-        visualize_results(chromosome_list, stats, airport_codes, save_dir="results")
+        chromosome_list = [
+            route.get_airports() for route in best_chromosome.get_routes()
+        ]
+        visualize_results(
+            chromosome_list,
+            stats,
+            airport_codes,
+            save_dir="results",
+            evolution_history=evolution_history,
+        )
 
+    pd.to_pickle(stats, "results/stats.pkl")
+    pd.to_pickle(best_chromosome, "results/best_chromosome.pkl")
+    pd.to_pickle(ga, "results/genetic_algorithm.pkl")
+    pd.to_pickle(evolution_history, "results/evolution_history.pkl")
     return best_chromosome, stats
 
 

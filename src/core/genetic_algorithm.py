@@ -1,18 +1,44 @@
 """GeneticAlgorithm main orchestrator for the genetic algorithm."""
 
 import random
+from multiprocessing import Pool
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
-from typing import List, Tuple, Optional, Dict
+from tqdm import tqdm
+
+from src.config import (
+    CONVERGENCE_THRESHOLD,
+    CONVERGENCE_WINDOW,
+    ELITISM_SIZE,
+    INITIAL_MUTATION_RATE,
+    MAX_ITERATIONS,
+    NUM_CHROMOSOMES,
+    NUM_WORKERS,
+    SELECTION_RATIO,
+)
+from src.core.evolution_operator import EvolutionOperator
+from src.core.fitness_evaluator import FitnessEvaluator
+from src.core.route_initializer import RouteInitializer
 from src.models.chromosome import Chromosome
 from src.models.problem_data import ProblemData
-from src.core.route_initializer import RouteInitializer
-from src.core.fitness_evaluator import FitnessEvaluator
-from src.core.evolution_operator import EvolutionOperator
-from src.config import (
-    NUM_CHROMOSOMES, MAX_ITERATIONS, INITIAL_MUTATION_RATE,
-    SELECTION_RATIO, CONVERGENCE_THRESHOLD, CONVERGENCE_WINDOW, ELITISM_SIZE
-)
-from src.timing import reset_timing_stats, print_timing_summary
+from src.timing import print_timing_summary, reset_timing_stats
+
+_POOL_EVALUATOR: Optional[FitnessEvaluator] = None
+
+
+def _init_pool(problem_data: ProblemData) -> None:
+    """Initializer to share evaluator across worker processes."""
+    global _POOL_EVALUATOR
+    _POOL_EVALUATOR = FitnessEvaluator(problem_data)
+
+
+def _evaluate_single(chromosome: Chromosome) -> Tuple[float, Dict]:
+    """Evaluate a chromosome inside a worker process."""
+    if _POOL_EVALUATOR is None:
+        raise RuntimeError("Pool evaluator not initialized")
+    fitness, stats = _POOL_EVALUATOR.evaluate(chromosome)
+    return fitness, stats
 
 
 class GeneticAlgorithm:
@@ -32,8 +58,9 @@ class GeneticAlgorithm:
         self.population: List[Chromosome] = []
         self.best_chromosome: Optional[Chromosome] = None
         self.best_stats: Optional[Dict] = None
+        self.evolution_history: List[Dict] = []
 
-    def run(self, verbose: bool = True) -> Tuple[Chromosome, Dict]:
+    def run(self, verbose: bool = True) -> Tuple[Chromosome, Dict, List[Dict]]:
         """
         Run the genetic algorithm.
 
@@ -41,16 +68,19 @@ class GeneticAlgorithm:
             verbose: Whether to print progress.
 
         Returns:
-            Tuple of (best_chromosome, statistics_dict).
+            Tuple of (best_chromosome, statistics_dict, evolution_history).
         """
         # Reset timing statistics
         reset_timing_stats()
+
+        # Initialize evolution history
+        self.evolution_history = []
 
         # Initialize population
         self._initialize_population()
 
         # Evaluate initial population
-        self._evaluate_population()
+        self._evaluate_population(verbose=verbose)
 
         # Track best solution
         self._update_best_solution()
@@ -62,6 +92,36 @@ class GeneticAlgorithm:
         if best_fitness is not None:
             fitness_history.append(best_fitness)
 
+            # Record initial generation (generation -1 for initial population)
+            avg_fitness = np.mean(
+                [c.get_fitness() or float("inf") for c in self.population]
+            )
+            std_fitness = np.std(
+                [c.get_fitness() or float("inf") for c in self.population]
+            )
+            self.evolution_history.append(
+                {
+                    "generation": -1,
+                    "best_fitness": best_fitness,
+                    "avg_fitness": avg_fitness,
+                    "std_fitness": std_fitness,
+                    "mutation_rate": INITIAL_MUTATION_RATE,
+                    "unserved_passengers": (
+                        self.best_stats.get("unserved_passengers", 0)
+                        if self.best_stats
+                        else 0
+                    ),
+                    "total_stops": (
+                        self.best_stats.get("total_stops", 0) if self.best_stats else 0
+                    ),
+                    "total_flights": (
+                        self.best_stats.get("total_flights", 0)
+                        if self.best_stats
+                        else 0
+                    ),
+                }
+            )
+
         # Evolution loop
         for generation in range(MAX_ITERATIONS):
             # Calculate annealed mutation rate
@@ -70,7 +130,7 @@ class GeneticAlgorithm:
             )
 
             # Evolve one generation
-            self._evolve_generation(mutation_rate)
+            self._evolve_generation(mutation_rate, generation, verbose)
 
             # Update best solution
             self._update_best_solution()
@@ -80,6 +140,40 @@ class GeneticAlgorithm:
                 current_fitness = self.best_chromosome.get_fitness()
                 fitness_history.append(current_fitness)
 
+                # Calculate population statistics
+                avg_fitness = np.mean(
+                    [c.get_fitness() or float("inf") for c in self.population]
+                )
+                std_fitness = np.std(
+                    [c.get_fitness() or float("inf") for c in self.population]
+                )
+
+                # Record generation metrics
+                self.evolution_history.append(
+                    {
+                        "generation": generation,
+                        "best_fitness": current_fitness,
+                        "avg_fitness": avg_fitness,
+                        "std_fitness": std_fitness,
+                        "mutation_rate": mutation_rate,
+                        "unserved_passengers": (
+                            self.best_stats.get("unserved_passengers", 0)
+                            if self.best_stats
+                            else 0
+                        ),
+                        "total_stops": (
+                            self.best_stats.get("total_stops", 0)
+                            if self.best_stats
+                            else 0
+                        ),
+                        "total_flights": (
+                            self.best_stats.get("total_flights", 0)
+                            if self.best_stats
+                            else 0
+                        ),
+                    }
+                )
+
                 # Check convergence
                 if self._check_convergence(fitness_history):
                     if verbose:
@@ -87,11 +181,21 @@ class GeneticAlgorithm:
                     break
 
                 # Print progress
-                if verbose and (generation % 50 == 0 or generation < 10):
-                    avg_fitness = np.mean([c.get_fitness() or float('inf') for c in self.population])
-                    std_fitness = np.std([c.get_fitness() or float('inf') for c in self.population])
-                    print(f"Generation {generation}: Best={current_fitness:.2f}, "
-                          f"Avg={avg_fitness:.2f}, Std={std_fitness:.2f}, Mutation={mutation_rate:.4f}")
+                if verbose and (generation % 50 == 0 or generation < 100):
+                    upax = (
+                        self.best_stats["unserved_passengers"]
+                        if self.best_stats
+                        else "N/A"
+                    )
+                    stops = self.best_stats["total_stops"] if self.best_stats else "N/A"
+                    print(
+                        (
+                            f"Generation {generation}: Best={current_fitness:.2f}, "
+                            f"Avg={avg_fitness:.2f}, Std={std_fitness:.2f}, "
+                            f"Mutation={mutation_rate:.4f}, "
+                            f"Unserved Passengers={upax}, Total Stops={stops}"
+                        )
+                    )
 
         # Print final results
         if verbose:
@@ -105,7 +209,7 @@ class GeneticAlgorithm:
         # Print timing summary
         print_timing_summary()
 
-        return self.best_chromosome, self.best_stats
+        return self.best_chromosome, self.best_stats, self.evolution_history
 
     def _initialize_population(self) -> None:
         """Initialize the population with random chromosomes."""
@@ -114,11 +218,11 @@ class GeneticAlgorithm:
             chromosome = self.initializer.initialize_chromosome()
             self.population.append(chromosome)
 
-    def _evaluate_population(self) -> None:
+    def _evaluate_population(self, verbose: bool = False) -> None:
         """Evaluate fitness for all chromosomes in population."""
-        for chromosome in self.population:
-            fitness, stats = self.evaluator.evaluate(chromosome)
-            chromosome.set_fitness(fitness)
+        self._evaluate_chromosomes(
+            self.population, verbose, "Evaluating init population"
+        )
 
     def _select_parents(self) -> List[Chromosome]:
         """
@@ -130,19 +234,25 @@ class GeneticAlgorithm:
         # Sort by fitness (lower is better)
         sorted_pop = sorted(
             self.population,
-            key=lambda c: c.get_fitness() if c.get_fitness() is not None else float('inf')
+            key=lambda c: (
+                c.get_fitness() if c.get_fitness() is not None else float("inf")
+            ),
         )
 
         # Select best individuals
         num_select = int(NUM_CHROMOSOMES * SELECTION_RATIO)
         return sorted_pop[:num_select]
 
-    def _evolve_generation(self, mutation_rate: float) -> None:
+    def _evolve_generation(
+        self, mutation_rate: float, generation_idx: int, verbose: bool
+    ) -> None:
         """
         Evolve one generation.
 
         Args:
             mutation_rate: Current mutation rate.
+            generation_idx: Current generation number (for progress display).
+            verbose: Whether to show per-generation progress bars.
         """
         # Select parents
         parents = self._select_parents()
@@ -175,21 +285,27 @@ class GeneticAlgorithm:
             offspring.append(parent.copy())
 
         # Evaluate offspring
-        for chromosome in offspring:
-            fitness, _ = self.evaluator.evaluate(chromosome)
-            chromosome.set_fitness(fitness)
+        self._evaluate_chromosomes(
+            offspring, verbose, f"Generation {generation_idx} evaluation"
+        )
 
         # Elitism: keep best individuals
         sorted_pop = sorted(
             self.population,
-            key=lambda c: c.get_fitness() if c.get_fitness() is not None else float('inf')
+            key=lambda c: (
+                c.get_fitness() if c.get_fitness() is not None else float("inf")
+            ),
         )
 
         # Replace worst offspring with best from previous generation
         for i in range(min(ELITISM_SIZE, len(sorted_pop))):
             worst_idx = max(
                 range(len(offspring)),
-                key=lambda j: offspring[j].get_fitness() if offspring[j].get_fitness() is not None else float('inf')
+                key=lambda j: (
+                    offspring[j].get_fitness()
+                    if offspring[j].get_fitness() is not None
+                    else float("inf")
+                ),
             )
             best_ind = sorted_pop[i]
             offspring[worst_idx] = best_ind.copy()
@@ -198,17 +314,64 @@ class GeneticAlgorithm:
         # Update population
         self.population = offspring
 
+    def _evaluate_chromosomes(
+        self, chromosomes: List[Chromosome], verbose: bool, desc: str
+    ) -> None:
+        """
+        Evaluate a list of chromosomes, optionally in parallel.
+
+        Args:
+            chromosomes: List of chromosomes to evaluate.
+            verbose: Whether to show progress bars.
+            desc: tqdm description.
+        """
+        if not chromosomes:
+            return
+
+        def _run_pool(processes):
+            """Evaluate a population using multiprocessing workers (-1 uses all available cores)."""
+            with Pool(
+                processes=processes,
+                initializer=_init_pool,
+                initargs=(self.problem_data,),
+            ) as pool:
+                return list(
+                    tqdm(
+                        pool.imap(_evaluate_single, chromosomes),
+                        total=len(chromosomes),
+                        desc=desc,
+                        leave=False,
+                        disable=not verbose,
+                    )
+                )
+
+        if NUM_WORKERS > 1:
+            results = _run_pool(NUM_WORKERS)
+        elif NUM_WORKERS == -1:
+            results = _run_pool(None)
+        else:
+            results = []
+            for chrom in tqdm(chromosomes, desc=desc, leave=False, disable=not verbose):
+                results.append(self.evaluator.evaluate(chrom))
+
+        for chrom, (fitness, _) in zip(chromosomes, results):
+            chrom.set_fitness(fitness)
+
     def _update_best_solution(self) -> None:
         """Update the best solution found so far."""
         best = min(
             self.population,
-            key=lambda c: c.get_fitness() if c.get_fitness() is not None else float('inf')
+            key=lambda c: (
+                c.get_fitness() if c.get_fitness() is not None else float("inf")
+            ),
         )
 
         if best.get_fitness() is not None:
-            if (self.best_chromosome is None or
-                self.best_chromosome.get_fitness() is None or
-                best.get_fitness() < self.best_chromosome.get_fitness()):
+            if (
+                self.best_chromosome is None
+                or self.best_chromosome.get_fitness() is None
+                or best.get_fitness() < self.best_chromosome.get_fitness()
+            ):
 
                 self.best_chromosome = best.copy()
                 _, self.best_stats = self.evaluator.evaluate(self.best_chromosome)
@@ -226,9 +389,7 @@ class GeneticAlgorithm:
         if len(fitness_history) < CONVERGENCE_WINDOW:
             return False
 
-        recent_improvement = (
-            fitness_history[-CONVERGENCE_WINDOW] - fitness_history[-1]
-        )
+        recent_improvement = fitness_history[-CONVERGENCE_WINDOW] - fitness_history[-1]
         return recent_improvement < CONVERGENCE_THRESHOLD
 
     def get_best_solution(self) -> Tuple[Optional[Chromosome], Optional[Dict]]:
@@ -239,4 +400,3 @@ class GeneticAlgorithm:
             Tuple of (best_chromosome, statistics_dict).
         """
         return self.best_chromosome, self.best_stats
-
